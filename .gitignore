@@ -1,0 +1,22 @@
+/vendor/
+/.env
+/public/hot
+/public/storage
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+/storage/logs/*
+!/storage/logs/.gitkeep
+.phpunit.cache/
+.phpunit.result.cache
+
+# Local development tools
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

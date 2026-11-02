@@ -1,0 +1,20 @@
+{
+  "name": "sdl/psr-custom-mvc",
+  "description": "Lightweight custom PHP MVC framework for the SDL PSR API",
+  "type": "project",
+  "require": {
+    "php": "^8.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "SDL\\Framework\\": "framework/",
+      "App\\": "app/"
+    }
+  },
+  "scripts": {
+    "check": "php -l public/index.php"
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
