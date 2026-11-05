@@ -7,6 +7,7 @@ use App\Controllers\DatabaseHealthController;
 use App\Controllers\DashboardController;
 use App\Controllers\ExampleController;
 use App\Controllers\HealthController;
+use App\Controllers\TourPlanController;
 use App\Middleware\AuthenticationMiddleware;
 use SDL\Framework\RequestIdMiddleware;
 
@@ -20,6 +21,9 @@ $router->post('/api/v1/auth/refresh', [AuthController::class, 'refresh']);
 $router->post('/api/v1/auth/logout', [AuthController::class, 'logout'], [new AuthenticationMiddleware()]);
 $router->get('/api/v1/auth/me', [AuthController::class, 'me'], [new AuthenticationMiddleware()]);
 $router->get('/api/v1/dashboard', [DashboardController::class, 'index'], [new AuthenticationMiddleware()]);
+$router->get('/api/v1/tour-plans', [TourPlanController::class, 'index'], [new AuthenticationMiddleware()]);
+$router->post('/api/v1/tour-plans/draft', [TourPlanController::class, 'draft'], [new AuthenticationMiddleware()]);
+$router->post('/api/v1/tour-plans/submit', [TourPlanController::class, 'submit'], [new AuthenticationMiddleware()]);
 $router->get('/api/v1/examples', [ExampleController::class, 'index']);
 $router->get('/api/v1/examples/{id}', [ExampleController::class, 'show']);
 $router->post('/api/v1/examples', [ExampleController::class, 'echoJson']);

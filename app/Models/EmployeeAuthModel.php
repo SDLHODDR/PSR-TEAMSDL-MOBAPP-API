@@ -27,6 +27,7 @@ final class EmployeeAuthModel extends Model
         if ($appAccess === null || empty($appAccess['ID'])) {
             return null;
         }
+        Helpers::printArr($appAccess);
 
         $employee = $this->fetchOne(<<<'SQL'
             SELECT a.EMP_CODE AS LOGIN_ID, b.ID AS EMP_ID
@@ -111,11 +112,12 @@ final class EmployeeAuthModel extends Model
                    e.COM_EMAIL
             FROM (
                 SELECT GEO_ID, GEO_DESC, GEO_LABEL, DIVSN_ID, EMP_ID, GEO_HCLS_ID, GEO_LVL
-                FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, TRUNC(SYSDATE)))
+                FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, TRUNC(ADD_MONTHS(SYSDATE, -24))))
                 WHERE EMP_ID = :employee_id
             ) g
             INNER JOIN SFM_EMPLOYEE_INFO e ON g.EMP_ID = e.ID
             SQL, ['employee_id' => $employeeId]);
+            //REmove ADD_MONTHS(SYSDATE,24) and replace SYSDATE
         $division = null;
         if ($hq !== null && !empty($hq['DIVSN_ID'])) {
             $division = $this->fetchOne(
@@ -123,16 +125,53 @@ final class EmployeeAuthModel extends Model
                 ['division_id' => $hq['DIVSN_ID']]
             );
         }
+        // $financialYear = $this->fetchOne(<<<'SQL'
+        //     SELECT LABEL, TO_CHAR(FROM_DT, 'dd-Mon-yyyy') AS FROMDATE,
+        //            TO_CHAR(TO_DATE, 'dd-Mon-yyyy') AS TODATE
+        //     FROM SFM_FINYEAR
+        //     WHERE TRUNC(SYSDATE) BETWEEN FROM_DT AND TO_DATE
+        //     SQL, []);
+
+        // $financialYear = $this->fetchOne(<<<'SQL'
+        //     SELECT
+        //         LABEL,
+        //         TO_CHAR(FROM_DT, 'DD-Mon-YYYY') FROMDATE,
+        //         TO_CHAR(TO_DATE, 'DD-Mon-YYYY') TODATE
+        //     FROM SFM_FINYEAR
+        //     WHERE LABEL = 'F25'
+        // SQL, []);
+
         $financialYear = $this->fetchOne(<<<'SQL'
-            SELECT LABEL, TO_CHAR(FROM_DT, 'dd-Mon-yyyy') AS FROMDATE,
-                   TO_CHAR(TO_DATE, 'dd-Mon-yyyy') AS TODATE
+            WITH FINYEAR AS (
+            SELECT
+                LABEL,
+                FROM_DT,
+                TO_DATE,
+                ROW_NUMBER() OVER (
+                    ORDER BY
+                        CASE
+                            WHEN TRUNC(SYSDATE)
+                                BETWEEN FROM_DT AND TO_DATE
+                            THEN 1
+                            ELSE 2
+                        END,
+                        FROM_DT DESC
+                ) RN
             FROM SFM_FINYEAR
-            WHERE TRUNC(SYSDATE) BETWEEN FROM_DT AND TO_DATE
-            SQL, []);
+        )
+        SELECT
+            LABEL,
+            TO_CHAR(FROM_DT, 'DD-Mon-YYYY') FROMDATE,
+            TO_CHAR(TO_DATE, 'DD-Mon-YYYY') TODATE
+        FROM FINYEAR
+        WHERE RN = 1
+        SQL, []);
 
         return [
-            'login_id' => $employee['LOGIN_ID'], 'login_type' => 'E',
-            'emp_id' => $employee['EMP_ID'], 'emp_code' => $hq['EMP_CODE'] ?? $details['EMP_CODE'],
+            'login_id' => $employee['LOGIN_ID'], 
+            'login_type' => 'E',
+            'emp_id' => $employee['EMP_ID'], 
+            'emp_code' => $hq['EMP_CODE'] ?? $details['EMP_CODE'],
             'emp_name' => $hq['EMP_NAME'] ?? $details['EMP_NAME'],
             'emp_email' => $hq['COM_EMAIL'] ?? $details['COM_EMAIL'],
             'emp_pic' => $hq['PICS'] ?? $details['PICS'],
@@ -148,10 +187,46 @@ final class EmployeeAuthModel extends Model
                 'hq_label' => $hq['GEO_LABEL'] ?? null,
             ],
             'financial_year' => $financialYear === null ? null : [
-                'label' => $financialYear['LABEL'], 'from_date' => $financialYear['FROMDATE'],
+                'label' => $financialYear['LABEL'], 
+                'from_date' => $financialYear['FROMDATE'],
                 'to_date' => $financialYear['TODATE'],
             ],
         ];
+    }
+
+    /** @return list<int> */
+    public function getEmpDivisions(int $employeeId): array
+    {
+        $employeeDiv = $this->fetchOne(<<<'SQL'
+            SELECT STATUS, TO_CHAR(DOL, 'dd-Mon-yyyy') DOL FROM SFM_EMPLOYEE_INFO WHERE ID = :employee_id
+            SQL, ['employee_id' => $employeeId]);
+
+        if ($employeeDiv === null) {
+            return [];
+        }
+
+        $dateDiv = ($employeeDiv['STATUS'] ?? null) === 'R'
+            ? ($employeeDiv['DOL'] ?? null)
+            : null;
+
+        $divisions = $this->fetchAll(<<<'SQL'
+            SELECT d.DIVSN_ID
+            FROM SFM_EMP_DIVISIONS d
+            INNER JOIN SFM_DIVISIONS v ON v.DIVSN_ID = d.DIVSN_ID
+            WHERE d.EMP_ID = :employee_id
+              AND NVL(TO_DATE(:effective_date, 'DD-Mon-YYYY'), TRUNC(SYSDATE)) BETWEEN
+              TRUNC(d.EFFEC_FROM) AND NVL(TRUNC(d.EFFEC_TO), DATE '3000-01-01')
+            ORDER BY v.SEQ, d.DIVSN_ID
+            SQL, [
+                'employee_id' => $employeeId,
+                'effective_date' => $dateDiv,
+            ]);
+
+        return array_map(
+            static fn (array $division): int => (int) $division['DIVSN_ID'],
+            $divisions
+        );
+
     }
 
     private function sfmLoginLog(

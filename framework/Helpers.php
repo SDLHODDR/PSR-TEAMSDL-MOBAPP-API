@@ -53,12 +53,7 @@ final class Helpers
     /**
      * Print Array.
      */
-    // public static function printArr(array $srr): string
-    // {
-    //     print '<pre/>';
-    //     print_r($arr);
-    //     exit;
-    // }
+    
     public static function printArr(array $arr)
     {
         print '---------------';
