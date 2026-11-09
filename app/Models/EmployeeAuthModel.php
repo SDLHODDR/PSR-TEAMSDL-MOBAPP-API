@@ -27,8 +27,9 @@ final class EmployeeAuthModel extends Model
         if ($appAccess === null || empty($appAccess['ID'])) {
             return null;
         }
-        Helpers::printArr($appAccess);
-
+        
+        //Helpers::printArr('----Appaccess----', $appAccess);
+        
         $employee = $this->fetchOne(<<<'SQL'
             SELECT a.EMP_CODE AS LOGIN_ID, b.ID AS EMP_ID
             FROM SFM_BCS_USERS a
@@ -39,6 +40,8 @@ final class EmployeeAuthModel extends Model
               AND (a.BLOCK_TILL IS NULL OR a.BLOCK_TILL <= SYSTIMESTAMP)
               AND b.STATUS = 'A'
             SQL, ['username' => $username, 'encoded_password' => $encodedPassword]);
+
+        //Helpers::printArr('----employee---------', $employee);
 
         if ($employee !== null && !empty($employee['EMP_ID'])) {
             $this->transaction(fn (): string => $this->insertLoginAttempt($username, $userIp, 'Y'));

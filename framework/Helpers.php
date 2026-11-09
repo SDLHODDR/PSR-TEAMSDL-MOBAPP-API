@@ -50,13 +50,34 @@ final class Helpers
         return $value === null || $value === '';
     }
 
+     /**
+     * Print Array.
+     */
+
+    public static function decodeMe(string $str, string $pwdStr)
+    {
+        for($i=0;$i<5;$i++)
+        {		
+            $decodePwd = base64_decode(strrev($pwdStr));
+        }
+
+        print '---------------';
+        print $str;
+        print '<br/>---------------';
+        print '<pre/>';
+        print_r($decodePwd);
+        exit;
+    }
+
     /**
      * Print Array.
      */
     
-    public static function printArr(array $arr)
+    public static function printArr(string $str, array $arr)
     {
         print '---------------';
+        print $str;
+        print '<br/>---------------';
         print '<pre/>';
         print_r($arr);
         exit;

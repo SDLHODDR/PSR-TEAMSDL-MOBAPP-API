@@ -8,7 +8,6 @@ namespace App\Controllers;
 // ini_set('display_startup_errors', 1);
 // error_reporting(E_ALL);
 
-use App\Models\AuthTokenModel;
 use App\Models\EmployeeAuthModel;
 use App\Services\AuthService;
 use App\Services\LegacyPasswordEncoder;
@@ -17,6 +16,8 @@ use SDL\Framework\Controller;
 use SDL\Framework\Database;
 use SDL\Framework\Request;
 use SDL\Framework\Response;
+use SDL\Framework\Helpers;
+
 use Throwable;
 
 final class AuthController extends Controller
@@ -26,6 +27,8 @@ final class AuthController extends Controller
         $body = $request->body();
         $username = $body['username'] ?? null;
         $password = $body['password'] ?? null;
+
+        //Helpers::printArr('--------Request-------', [$body, $username, $password]);
         $errors = [];
         if (!is_string($username) || trim($username) === '') $errors['username'] = ['Username is required.'];
         if (!is_string($password) || $password === '') $errors['password'] = ['Password is required.'];
@@ -35,8 +38,10 @@ final class AuthController extends Controller
 
         try {
             $db = Database::fromEnvironment();
-            $service = new AuthService(new EmployeeAuthModel($db), new LegacyPasswordEncoder(), new AuthTokenModel($db), new TokenService());
+            
+            $service = new AuthService(new EmployeeAuthModel($db), new LegacyPasswordEncoder(), new TokenService());
             $result = $service->loginAndIssueTokens($username, $password, $request->ip());
+            //Helpers::printArr('----Auth Employee Results ----', $result);
         } catch (Throwable $exception) {
             error_log('[SDL PSR API] Login/token issuance failed: ' . get_class($exception));
             return $this->failure('Login service is temporarily unavailable.', 503, 'authentication_service_unavailable');
@@ -45,52 +50,14 @@ final class AuthController extends Controller
         return $this->success([
             'token_type' => 'Bearer',
             'access_token' => $result['access_token'], 'expires_in' => $result['expires_in'],
-            'access_expires_at' => $result['access_expires_at'], 'refresh_token' => $result['refresh_token'],
-            'refresh_expires_in' => $result['refresh_expires_in'], 'refresh_expires_at' => $result['refresh_expires_at'],
+            'expires_at' => $result['expires_at'], 'access_expires_at' => $result['access_expires_at'],
         ], 'Login successful.');
     }
 
-    /** Public endpoint; possession of a valid refresh token is required. */
-    public function refresh(Request $request): Response
-    {
-        $rawRefreshToken = $request->body()['refresh_token'] ?? null;
-        if (!is_string($rawRefreshToken) || $rawRefreshToken === '') {
-            return $this->failure('Refresh token is required.', 422, 'validation_failed', ['refresh_token' => ['Refresh token is required.']]);
-        }
-        try {
-            $db = Database::fromEnvironment();
-            $service = new AuthService(new EmployeeAuthModel($db), new LegacyPasswordEncoder(), new AuthTokenModel($db), new TokenService());
-            $result = $service->refreshTokens($rawRefreshToken, $request->ip());
-        } catch (Throwable $exception) {
-            error_log('[SDL PSR API] Refresh-token operation failed: ' . get_class($exception));
-            return $this->failure('Authentication service is temporarily unavailable.', 503, 'authentication_service_unavailable');
-        }
-        if (($result['status'] ?? '') !== 'rotated') {
-            // Do not reveal whether a token was unknown, expired, revoked, or replayed.
-            return $this->failure('The refresh token is invalid or expired. Please sign in again.', 401, 'invalid_refresh_token');
-        }
-        $tokens = $result['tokens'];
-        return $this->success([
-            'token_type' => 'Bearer',
-            'access_token' => $tokens['access_token'], 'expires_in' => $tokens['expires_in'],
-            'access_expires_at' => $tokens['access_expires_at'], 'refresh_token' => $tokens['refresh_token'],
-            'refresh_expires_in' => $tokens['refresh_expires_in'], 'refresh_expires_at' => $tokens['refresh_expires_at'],
-        ], 'Tokens refreshed successfully.');
-    }
-
-    /** Protected endpoint: revoke all tokens belonging to this authenticated session family. */
+    /** Stateless logout: the client discards the JWT; it remains valid until expiry. */
     public function logout(Request $request): Response
     {
-        $familyId = $request->attribute('authenticated_family_id');
-        if (!is_string($familyId) || $familyId === '') return $this->failure('Authentication is required.', 401, 'unauthorized');
-        try {
-            $db = Database::fromEnvironment();
-            (new AuthTokenModel($db))->revokeFamily($familyId);
-        } catch (Throwable $exception) {
-            error_log('[SDL PSR API] Logout failed: ' . get_class($exception));
-            return $this->failure('Authentication service is temporarily unavailable.', 503, 'authentication_service_unavailable');
-        }
-        return $this->success(['logged_out' => true], 'Logout successful.');
+        return $this->success(['logged_out' => true], 'Logout successful. The access token remains valid until expiry.');
     }
 
     public function me(Request $request): Response
