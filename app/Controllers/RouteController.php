@@ -144,13 +144,13 @@ final class RouteController extends Controller
         } catch (InvalidArgumentException $exception) {
             return $this->failure($exception->getMessage(), 422, 'validation_failed');
         } catch (Throwable $exception) {
-            error_log('[SDL PSR API] Consent OTP queue failed: ' . get_class($exception));
-            return $this->failure('The consent OTP could not be queued.', 503, 'consent_otp_unavailable');
+            error_log('[SDL PSR API] Consent OTP delivery failed: ' . get_class($exception));
+            return $this->failure('The consent OTP could not be sent.', 503, 'consent_otp_delivery_failed');
         }
         if ($data === null) {
             return $this->failure('The requested route customer was not found.', 404, 'route_customer_not_found');
         }
-        return $this->success($data, 'Consent OTP queued for delivery.');
+        return $this->success($data, 'Consent OTP sent to the customer.');
     }
 
     public function verifyConsentOtp(Request $request): Response

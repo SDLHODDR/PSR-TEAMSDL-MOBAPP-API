@@ -32,6 +32,10 @@ $router->get('/api/v1/expenses', [ExpensesController::class, 'index'], $business
 $router->get('/api/v1/reports/monthly', [ReportsController::class, 'monthly'], $businessMiddleware);
 $router->get('/api/v1/reports/daily', [ReportsController::class, 'daily'], $businessMiddleware);
 $router->get('/api/v1/pob-sob', [PobSobController::class, 'index'], $businessMiddleware);
+$router->get('/api/v1/pob-sob/options', [PobSobController::class, 'options'], $businessMiddleware);
+$router->get('/api/v1/pob-sob/orders/{orderId}', [PobSobController::class, 'order'], $businessMiddleware);
+$router->post('/api/v1/pob-sob/orders', [PobSobController::class, 'save'], $businessMiddleware);
+$router->post('/api/v1/pob-sob/orders/{orderId}/confirm', [PobSobController::class, 'confirm'], $businessMiddleware);
 $router->get('/api/v1/tour-plans/activities', [TourPlanController::class, 'activities'], $businessMiddleware);
 $router->get('/api/v1/tour-plans/routes', [TourPlanController::class, 'routes'], $businessMiddleware);
 $router->get('/api/v1/tour-plans', [TourPlanController::class, 'index'], $businessMiddleware);

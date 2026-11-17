@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\SmsGatewayService;
 use InvalidArgumentException;
 use SDL\Framework\Database;
 use SDL\Framework\Model;
@@ -312,12 +313,16 @@ final class RouteModel extends Model
                     'mobile_number' => (string) $customer['primary_phone'],
                     'login_id' => $loginId,
                 ]);
+            (new SmsGatewayService())->sendConsentOtp(
+                (string) $customer['primary_phone'],
+                $otp
+            );
         });
 
         return [
-            'delivery_status' => 'queued',
+            'delivery_status' => 'sent',
             'retry_after_seconds' => 120,
-            'message' => 'OTP queued in Oracle. SMS gateway delivery is not configured in this API yet.',
+            'message' => 'Consent OTP SMS sent.',
         ];
     }
 

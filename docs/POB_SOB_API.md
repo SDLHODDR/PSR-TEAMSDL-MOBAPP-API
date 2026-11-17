@@ -1,6 +1,8 @@
 # POB/SOB orders API
 
-The authenticated monthly POB/SOB order flow is exposed through:
+All POB/SOB endpoints below require the authenticated employee bearer token.
+
+## Monthly orders
 
 - `GET /api/v1/pob-sob?month=YYYY-MM`
 
@@ -28,6 +30,8 @@ Example response data:
       "orders": [
         {
           "customer_id": 120,
+          "order_id": 710,
+          "source": "CP",
           "customer": "Aadhar Medical Store",
           "order_to": "Aadhar Medical Store",
           "type": "POB",
@@ -36,7 +40,6 @@ Example response data:
           "process_flag": "Y",
           "otp_available": true,
           "verified_at": "2026-10-01 10:30 AM",
-          "source": "CP",
           "plan_id": 4501
         }
       ]
@@ -45,5 +48,39 @@ Example response data:
 }
 ```
 
-The API is read-only. It does not expose the legacy OTP send/verification
-actions.
+## Form options
+
+- `GET /api/v1/pob-sob/options` returns today's eligible customers and products.
+- `GET /api/v1/pob-sob/options?customer_id=<id>` also returns that customer's
+  eligible order-to parties.
+
+## Order details and invoice data
+
+`GET /api/v1/pob-sob/orders/<order_id>?source=PO|CP|CS` returns the employee,
+customer, order-to party, date, total, status, and item lines. The mobile app
+uses this response for order viewing and generating the invoice-style PDF.
+
+## Save and confirm
+
+`POST /api/v1/pob-sob/orders` creates a draft. Include `order_id` to edit the
+authenticated employee's unconfirmed order.
+
+```json
+{
+  "date": "YYYY-MM-DD",
+  "customer_id": 123,
+  "order_to_id": 456,
+  "items": [
+    {"product_id": 789, "quantity": 2, "free_quantity": 1}
+  ]
+}
+```
+
+Only today's database date is accepted for create/edit. Rates are resolved by
+the API from the active item/division setup; client rates and amounts are not
+accepted.
+
+`POST /api/v1/pob-sob/orders/<order_id>/confirm` confirms the draft and invokes
+the legacy `PROCESS_POBSOB` database procedure. Only the authenticated
+employee's unconfirmed order for today can be confirmed. Legacy OTP
+send/verification actions are not exposed by these endpoints.

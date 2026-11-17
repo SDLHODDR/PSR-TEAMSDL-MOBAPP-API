@@ -22,7 +22,7 @@ final class TourPlanModel extends Model
             SELECT ACT_TYPE, ACT_DESC
             FROM SFM_ACTIVITY_TYPE
             WHERE STATUS = 'A'
-              AND UPPER(TRIM(ACT_DESC)) NOT IN ('REMOVE', 'LEAVE', 'HOLIDAY', 'SUNDAY')
+              AND UPPER(TRIM(ACT_DESC)) NOT IN ('REMOVE', 'HOLIDAY', 'SUNDAY')
             ORDER BY ACT_DESC
             SQL);
 
@@ -430,7 +430,7 @@ final class TourPlanModel extends Model
         $activity = strtoupper(trim((string) ($input['activity_type'] ?? $input['activityType'] ?? '')));
         if ($activity === '') throw new InvalidArgumentException('activity_type is required.');
         $validActivity = $this->fetchOne(
-            "SELECT ACT_TYPE FROM SFM_ACTIVITY_TYPE WHERE ACT_TYPE = :activity_type AND STATUS = 'A' AND UPPER(TRIM(ACT_DESC)) NOT IN ('REMOVE', 'LEAVE', 'HOLIDAY', 'SUNDAY')",
+            "SELECT ACT_TYPE FROM SFM_ACTIVITY_TYPE WHERE ACT_TYPE = :activity_type AND STATUS = 'A' AND UPPER(TRIM(ACT_DESC)) NOT IN ('REMOVE', 'HOLIDAY', 'SUNDAY')",
             ['activity_type' => $activity]
         );
         if ($validActivity === null) throw new InvalidArgumentException('The selected activity is not available.');

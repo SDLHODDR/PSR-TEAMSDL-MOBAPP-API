@@ -31,7 +31,7 @@ final class DashboardModel extends Model
 
         $financialYear = $this->fetchOne(<<<'SQL'
             WITH FINYEAR AS (
-                SELECT LABEL, FROM_DT, TO_DATE,
+                SELECT FROM_DT, TO_DATE,
                        ROW_NUMBER() OVER (
                            ORDER BY CASE
                                WHEN TRUNC(SYSDATE) BETWEEN FROM_DT AND TO_DATE THEN 1
@@ -41,15 +41,18 @@ final class DashboardModel extends Model
                        ) AS RN
                 FROM SFM_FINYEAR
             )
-            SELECT LABEL,
-                   TO_CHAR(FROM_DT, 'DD-Mon-YYYY') AS FROMDATE,
+            SELECT TO_CHAR(FROM_DT, 'DD-Mon-YYYY') AS FROMDATE,
                    TO_CHAR(TO_DATE, 'DD-Mon-YYYY') AS TODATE
             FROM FINYEAR
             WHERE RN = 1
             SQL);
 
-        $fromDate = (string) ($financialYear['FROMDATE'] ?? '01-Apr-2025');
-        $toDate = (string) ($financialYear['TODATE'] ?? '31-Mar-2026');
+        if ($financialYear === null || empty($financialYear['FROMDATE']) || empty($financialYear['TODATE'])) {
+            throw new \RuntimeException('The active financial year was not found.');
+        }
+
+        $fromDate = (string) $financialYear['FROMDATE'];
+        $toDate = (string) $financialYear['TODATE'];
 
         $divisionIds = $this->employeeAuthModel->getEmpDivisions($employeeId);
 
@@ -62,19 +65,35 @@ final class DashboardModel extends Model
                 SELECT GEO_ID, GEO_LABEL, GEO_DESC, GEO_LVL
                 FROM (
                     SELECT DISTINCT g.GEO_ID, g.GEO_LABEL, g.GEO_DESC, g.GEO_LVL
-                    FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, DATE '2024-12-31')) g
-                    INNER JOIN SFM_EMPLOYEE_INFO e ON e.GEO_ID = g.GEO_ID
+                    FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, TRUNC(SYSDATE))) g
+                    INNER JOIN SFM_EMPLOYEE_INFO e ON e.ID = g.EMP_ID
                     WHERE g.DIVSN_ID IN ($divisionPlaceholders)
                       AND e.ID = :employee_id
                 )
                 SQL, $divisionParams);
         }
 
+        $poolCount = 1;
+        if ($hq !== null && (int) ($hq['GEO_LVL'] ?? 0) === 100 && $divisionIds !== []) {
+            $pool = $this->fetchOne(<<<'SQL'
+                SELECT COUNT(1) AS POOL_COUNT
+                FROM NEW_GEO_MAPPING
+                WHERE GEO_LABEL = get_empid_hqlbl(:employee_id, LAST_DAY(SYSDATE))
+                  AND DIVSN_ID = :division_id
+                  AND LAST_DAY(SYSDATE) BETWEEN EFFEC_FROM
+                      AND NVL(EFFEC_TO, LAST_DAY(SYSDATE))
+                SQL, [
+                    'employee_id' => $employeeId,
+                    'division_id' => $divisionIds[0],
+                ]);
+            $poolCount = max(1, (int) ($pool['POOL_COUNT'] ?? 0));
+        }
+
         return [
             'non_reporting_days' => $this->findNonReportingDays($employeeId, (string) $employee['DOJ'], $fromDate, $toDate),
             'open_requests' => $this->findOpenRequests($employeeId, $fromDate, $toDate),
             'campaigns' => $this->findCampaigns($employeeId, $divisionIds, $toDate),
-            'sales' => $this->findSalesSummary($hq, $divisionIds, $toDate),
+            'sales' => $this->findSalesSummary($hq, $divisionIds, $poolCount),
         ];
     }
 
@@ -181,10 +200,11 @@ final class DashboardModel extends Model
             SQL, $params);
     }
 
-    private function findSalesSummary(?array $hq, array $divisionIds, string $toDate): array
+    private function findSalesSummary(?array $hq, array $divisionIds, int $poolCount): array
     {
         if ($hq === null || empty($hq['GEO_LABEL']) || $divisionIds === []) {
             return [
+                'cy_target' => '0.00', 'cy_sale' => '0.00', 'ly_sale' => '0.00',
                 'ytm_target' => 0, 'ytm_sale' => 0, 'last_year_ytm_sale' => 0,
                 'ytm_achievement' => 0, 'ytm_growth' => 0,
             ];
@@ -192,7 +212,6 @@ final class DashboardModel extends Model
 
         [$placeholders, $params] = $this->divisionParameters($divisionIds);
         $params['geo_label'] = $hq['GEO_LABEL'];
-        $params['to_date'] = $toDate;
         
         $row = $this->fetchOne(<<<SQL
             SELECT NVL(SUM(TG_CUM_CTP_VALUE), 0) AS YTM_TARGET,
@@ -201,15 +220,18 @@ final class DashboardModel extends Model
             FROM NEW_GEO_TGTSALES
             WHERE GEO_LABEL = :geo_label
               AND DIVSN_ID IN ($placeholders)
-              AND MNTH = ADD_MONTHS(TRUNC(TO_DATE(:to_date, 'DD-Mon-YYYY'), 'MM'),
-                  CASE WHEN TO_CHAR(TO_DATE(:to_date, 'DD-Mon-YYYY'), 'MON') = 'APR' THEN 0 ELSE -1 END)
+              AND MNTH = ADD_MONTHS(TRUNC(SYSDATE, 'MM'),
+                  CASE WHEN EXTRACT(MONTH FROM SYSDATE) = 4 THEN 0 ELSE -1 END)
             SQL, $params);
 
-        $target = (float) ($row['YTM_TARGET'] ?? 0);
-        $sale = (float) ($row['YTM_SALE'] ?? 0);
-        $lastYearSale = (float) ($row['LAST_YEAR_YTM_SALE'] ?? 0);
+        $target = (float) ($row['YTM_TARGET'] ?? 0) / $poolCount;
+        $sale = (float) ($row['YTM_SALE'] ?? 0) / $poolCount;
+        $lastYearSale = (float) ($row['LAST_YEAR_YTM_SALE'] ?? 0) / $poolCount;
 
         return [
+            'cy_target' => number_format($target / 100000, 2, '.', ''),
+            'cy_sale' => number_format($sale / 100000, 2, '.', ''),
+            'ly_sale' => number_format($lastYearSale / 100000, 2, '.', ''),
             'ytm_target' => $target,
             'ytm_sale' => $sale,
             'last_year_ytm_sale' => $lastYearSale,
