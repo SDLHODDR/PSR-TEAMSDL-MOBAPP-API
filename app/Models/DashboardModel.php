@@ -9,6 +9,14 @@ use SDL\Framework\Model;
 
 final class DashboardModel extends Model
 {
+    private const FRANCHISE_HOLIDAY_GROUPS = [
+        'FR004' => 'Q1006',
+        'FR007' => 'Q1002',
+        'FR006' => 'Q1002',
+        'FR001' => 'Q1003',
+        'FR002' => 'Q1003',
+    ];
+
     private EmployeeAuthModel $employeeAuthModel;
 
     public function __construct(Database $db)
@@ -89,47 +97,191 @@ final class DashboardModel extends Model
             $poolCount = max(1, (int) ($pool['POOL_COUNT'] ?? 0));
         }
 
+        $nonReportingDays = $this->findNonReportingDays(
+                $employeeId,
+                (string) $employee['EMP_CODE'],
+                (string) $employee['DOJ'],
+                $fromDate,
+                $toDate
+            );
+        $openRequests = $this->findOpenRequests($employeeId, $fromDate, $toDate);
+        $rejectedRequests = $this->findRejectedRequests($employeeId, $fromDate, $toDate);
+
         return [
-            'non_reporting_days' => $this->findNonReportingDays($employeeId, (string) $employee['DOJ'], $fromDate, $toDate),
-            'open_requests' => $this->findOpenRequests($employeeId, $fromDate, $toDate),
+            'non_reporting_days' => $nonReportingDays,
+            'open_requests' => $openRequests,
+            'reporting_status' => [
+                ...array_map(
+                    static fn (string $date): array => [
+                        'day_date' => $date,
+                        'status' => 'non_reported',
+                    ],
+                    $nonReportingDays
+                ),
+                ...array_map(
+                    static fn (array $row): array => [
+                        'day_date' => $row['DAY_DATE'],
+                        'status' => 'delayed',
+                    ],
+                    $openRequests
+                ),
+                ...array_map(
+                    static fn (array $row): array => [
+                        'day_date' => $row['DAY_DATE'],
+                        'status' => 'rejected',
+                    ],
+                    $rejectedRequests
+                ),
+            ],
             'campaigns' => $this->findCampaigns($employeeId, $divisionIds, $toDate),
             'sales' => $this->findSalesSummary($hq, $divisionIds, $poolCount),
         ];
     }
 
-    private function findNonReportingDays(int $employeeId, string $doj, string $fromDate, string $toDate): array
-    {
+    private function findNonReportingDays(
+        int $employeeId,
+        string $employeeCode,
+        string $doj,
+        string $fromDate,
+        string $toDate
+    ): array {
         $rows = $this->fetchAll(<<<'SQL'
-            SELECT TO_CHAR(day_date, 'dd-Mon-yyyy') AS DAY_DATE
-            FROM (
-                SELECT GREATEST(TO_DATE(:doj, 'dd-Mon-yyyy'), TO_DATE(:from_date, 'dd-Mon-yyyy')) - 1 + LEVEL AS day_date
+            WITH calendar_days AS (
+                SELECT GREATEST(
+                           TO_DATE(:doj, 'dd-Mon-yyyy'),
+                           TO_DATE(:from_date, 'dd-Mon-yyyy')
+                       ) - 1 + LEVEL AS report_day
                 FROM DUAL
-                CONNECT BY GREATEST(TO_DATE(:doj, 'dd-Mon-yyyy'), TO_DATE(:from_date, 'dd-Mon-yyyy')) - 1 + LEVEL < TO_DATE(:to_date, 'dd-Mon-yyyy') + 1
-                MINUS
-                SELECT day_date
-                FROM (
-                    SELECT TRUNC(DAY_DATE) AS day_date
-                    FROM SFM_DAY_PLANS
-                    WHERE EMP_ID = :employee_id AND DAY_DATE >= TO_DATE(:from_date, 'dd-Mon-yyyy')
-                      AND DAY_DATE < TO_DATE(:to_date, 'dd-Mon-yyyy') + 1 AND STATUS IN ('A', 'T')
-                    UNION
-                    SELECT TRUNC(ASON_DATE)
-                    FROM SFM_NONFLD_ACTIVITY
-                    WHERE EMP_ID = :employee_id AND ASON_DATE >= TO_DATE(:from_date, 'dd-Mon-yyyy')
-                      AND ASON_DATE < TO_DATE(:to_date, 'dd-Mon-yyyy') + 1 AND ACT_TYPE <> 'F' AND STATUS IN ('A', 'T')
-                    UNION
-                    SELECT TRUNC(DAY_DATE)
-                    FROM SFM_DAY_PLANS_OPEN
-                    WHERE EMP_ID = :employee_id AND DAY_DATE >= TO_DATE(:from_date, 'dd-Mon-yyyy')
-                      AND DAY_DATE < TO_DATE(:to_date, 'dd-Mon-yyyy') + 1 AND STATUS IN ('A', 'T')
+                CONNECT BY GREATEST(
+                               TO_DATE(:doj, 'dd-Mon-yyyy'),
+                               TO_DATE(:from_date, 'dd-Mon-yyyy')
+                           ) - 1 + LEVEL
+                           <= LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy'), TRUNC(SYSDATE) - 1)
+            ),
+            reported_days AS (
+                SELECT TRUNC(DAY_DATE) AS report_day
+                FROM SFM_DAY_PLANS
+                WHERE EMP_ID = :employee_id
+                  AND DAY_DATE >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND DAY_DATE < LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy') + 1, TRUNC(SYSDATE))
+                  AND STATUS IN ('A', 'T')
+                UNION
+                SELECT TRUNC(ASON_DATE)
+                FROM SFM_NONFLD_ACTIVITY
+                WHERE EMP_ID = :employee_id
+                  AND ASON_DATE >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND ASON_DATE < LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy') + 1, TRUNC(SYSDATE))
+                  AND ACT_TYPE <> 'F'
+                  AND STATUS IN ('A', 'T')
+                UNION
+                SELECT TRUNC(a.DAY_DATE)
+                FROM SFM_DAY_PLANS_OPEN a
+                INNER JOIN SFM_USER_TASKS t
+                    ON t.TRAN_ID = a.ID AND t.EMP_ID = a.EMP_ID
+                WHERE a.EMP_ID = :employee_id
+                  AND a.DAY_DATE >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND a.DAY_DATE < LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy') + 1, TRUNC(SYSDATE))
+                  AND a.STATUS IN ('A', 'T')
+                UNION
+                SELECT TRUNC(d.DAY_DATE)
+                FROM SFM_DAY_PLANS d
+                WHERE d.EMP_ID = :employee_id
+                  AND d.STATUS = 'N'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM SFM_USER_TASKS rejected_task
+                      WHERE rejected_task.ID = (
+                          SELECT MAX(latest_task.ID)
+                          FROM SFM_USER_TASKS latest_task
+                          WHERE latest_task.TRAN_ID = d.ID
+                            AND latest_task.TASK_GROUP = 'DayPlanAuth'
+                      )
+                        AND rejected_task.STATUS = 'R'
+                  )
+                UNION
+                SELECT TRUNC(HOL_DATE)
+                FROM EPPLIVE.BCS_HOLIDAYS
+                WHERE HOL_GRP = (
+                    SELECT HOL_TBLNO
+                    FROM EPPLIVE.BCS_EMPLOYEE
+                    WHERE EMP_CODE = :employee_code
                 )
+                  AND HOL_DATE >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND HOL_DATE < LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy') + 1, TRUNC(SYSDATE))
+                UNION
+                SELECT TRUNC(HOL_DATE)
+                FROM EPPLIVE.BCS_HOLIDAYS
+                WHERE HOL_GRP = :franchise_holiday_group
+                  AND HOL_DATE >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND HOL_DATE < LEAST(TO_DATE(:to_date, 'dd-Mon-yyyy') + 1, TRUNC(SYSDATE))
+                UNION
+                SELECT TRUNC(l.LVE_DATE_FR + n.NUM)
+                FROM EPPLIVE.BCS_EMP_LEAVES_TEMP l
+                CROSS JOIN (
+                    SELECT LEVEL - 1 AS NUM
+                    FROM DUAL
+                    CONNECT BY LEVEL <= 100
+                ) n
+                WHERE l.EMP_CODE = :employee_code
+                  AND l.STATUS IN ('A', 'T', 'X')
+                  AND l.LVE_DATE_FR + n.NUM <= l.LVE_DATE_TO
+                  AND l.LVE_DATE_FR + n.NUM >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND l.LVE_DATE_FR + n.NUM < LEAST(
+                      TO_DATE(:to_date, 'dd-Mon-yyyy') + 1,
+                      TRUNC(SYSDATE)
+                  )
+                UNION
+                SELECT TRUNC(l.LVE_DATE_FR + n.NUM)
+                FROM EPPLIVE.BCS_EMP_LEAVES l
+                CROSS JOIN (
+                    SELECT LEVEL - 1 AS NUM
+                    FROM DUAL
+                    CONNECT BY LEVEL <= 100
+                ) n
+                WHERE l.EMP_CODE = :employee_code
+                  AND l.STATUS IN ('A', 'T', 'X')
+                  AND l.LVE_DATE_FR + n.NUM <= l.LVE_DATE_TO
+                  AND l.LVE_DATE_FR + n.NUM >= GREATEST(
+                      TO_DATE(:doj, 'dd-Mon-yyyy'),
+                      TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  )
+                  AND l.LVE_DATE_FR + n.NUM < LEAST(
+                      TO_DATE(:to_date, 'dd-Mon-yyyy') + 1,
+                      TRUNC(SYSDATE)
+                  )
             )
-            ORDER BY day_date
+            SELECT TO_CHAR(missing.report_day, 'dd-Mon-yyyy') AS DAY_DATE
+            FROM (
+                SELECT report_day FROM calendar_days
+                MINUS
+                SELECT report_day FROM reported_days
+            ) missing
+            ORDER BY missing.report_day
             SQL, [
                 'doj' => $doj,
                 'from_date' => $fromDate,
                 'to_date' => $toDate,
                 'employee_id' => $employeeId,
+                'employee_code' => $employeeCode,
+                'franchise_holiday_group' => self::FRANCHISE_HOLIDAY_GROUPS[strtoupper($employeeCode)] ?? null,
             ]);
 
         return array_map(static fn (array $row): string => (string) $row['DAY_DATE'], $rows);
@@ -138,30 +290,77 @@ final class DashboardModel extends Model
     private function findOpenRequests(int $employeeId, string $fromDate, string $toDate): array
     {
         return $this->fetchAll(<<<'SQL'
-            SELECT TO_CHAR(day_date, 'dd-Mon') AS DATE_LABEL,
-                   TO_CHAR(day_date, 'dd-Mon-yyyy') AS DAY_DATE
+            SELECT TO_CHAR(pending_days.report_day, 'dd-Mon') AS DATE_LABEL,
+                   'delayed' AS STATUS,
+                   TO_CHAR(pending_days.report_day, 'dd-Mon-yyyy') AS DAY_DATE
             FROM (
-                SELECT day_date
-                FROM SFM_DAY_PLANS_OPEN
-                WHERE EMP_ID = :employee_id AND STATUS = 'A'
-                UNION
-                SELECT o.day_date
-                FROM SFM_DAY_PLANS d
-                INNER JOIN SFM_DAY_PLANS_OPEN o
-                    ON TRUNC(d.day_date) = TRUNC(o.day_date) AND d.emp_id = o.emp_id
-                WHERE d.STATUS = 'N' AND d.EMP_ID = :employee_id AND o.STATUS = 'A'
+                SELECT candidate_days.report_day
+                FROM (
+                    SELECT TRUNC(day_date) AS report_day
+                    FROM SFM_DAY_PLANS_OPEN
+                    WHERE EMP_ID = :employee_id AND STATUS = 'A'
+                    UNION
+                    SELECT TRUNC(o.day_date)
+                    FROM SFM_DAY_PLANS d
+                    INNER JOIN SFM_DAY_PLANS_OPEN o
+                        ON TRUNC(d.day_date) = TRUNC(o.day_date) AND d.emp_id = o.emp_id
+                    WHERE d.STATUS = 'N' AND d.EMP_ID = :employee_id AND o.STATUS = 'A'
+                ) candidate_days
                 MINUS
-                SELECT day_date
-                FROM SFM_DAY_PLANS
-                WHERE EMP_ID = :employee_id AND STATUS IN ('T', 'A')
-                UNION
-                SELECT ASON_DATE
-                FROM SFM_NONFLD_ACTIVITY
-                WHERE EMP_ID = :employee_id AND STATUS <> 'X'
-            )
-            WHERE day_date >= TO_DATE(:from_date, 'dd-Mon-yyyy')
-              AND day_date < TO_DATE(:to_date, 'dd-Mon-yyyy') + 1
-            ORDER BY day_date
+                SELECT completed_days.report_day
+                FROM (
+                    SELECT TRUNC(day_date) AS report_day
+                    FROM SFM_DAY_PLANS
+                    WHERE EMP_ID = :employee_id AND STATUS IN ('T', 'A')
+                    UNION
+                    SELECT TRUNC(ASON_DATE)
+                    FROM SFM_NONFLD_ACTIVITY
+                    WHERE EMP_ID = :employee_id AND STATUS <> 'X'
+                ) completed_days
+            ) pending_days
+            WHERE pending_days.report_day >= TO_DATE(:from_date, 'dd-Mon-yyyy')
+              AND pending_days.report_day <= TO_DATE(:to_date, 'dd-Mon-yyyy')
+              AND pending_days.report_day <= TRUNC(SYSDATE)
+            ORDER BY pending_days.report_day
+            SQL, [
+                'employee_id' => $employeeId,
+                'from_date' => $fromDate,
+                'to_date' => $toDate,
+            ]);
+    }
+
+    private function findRejectedRequests(int $employeeId, string $fromDate, string $toDate): array
+    {
+        return $this->fetchAll(<<<'SQL'
+            SELECT x.ID, TO_CHAR(x.DAY_DATE, 'dd-Mon') AS DATE_LABEL,
+                   TO_CHAR(x.DAY_DATE, 'dd-Mon-yyyy') AS DAY_DATE
+            FROM (
+                SELECT d.ID, d.DAY_DATE, MAX(t.ID) AS TASK_ID
+                FROM SFM_DAY_PLANS d
+                INNER JOIN SFM_USER_TASKS t
+                    ON t.TRAN_ID = d.ID
+                   AND t.EMP_ID = d.EMP_ID
+                WHERE t.TASK_GROUP = 'DayPlanAuth'
+                  AND d.EMP_ID = :employee_id
+                  AND d.STATUS = 'N'
+                  AND d.DAY_DATE >= TO_DATE(:from_date, 'dd-Mon-yyyy')
+                  AND d.DAY_DATE <= TO_DATE(:to_date, 'dd-Mon-yyyy')
+                  AND d.DAY_DATE <= TRUNC(SYSDATE)
+                GROUP BY d.ID, d.DAY_DATE
+            ) x
+            INNER JOIN SFM_USER_TASKS latest_task
+                ON latest_task.ID = x.TASK_ID
+            WHERE latest_task.STATUS = 'R'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM SFM_MONTHLY_EXPENSE expense
+                  WHERE expense.EMP_ID = :employee_id
+                    AND NVL(expense.STATUS, 'N') = 'A'
+                    AND x.DAY_DATE BETWEEN
+                        TO_DATE(TO_CHAR(expense.ASON_DATE, 'Mon-yyyy'), 'Mon-yyyy')
+                        AND LAST_DAY(expense.ASON_DATE)
+              )
+            ORDER BY x.DAY_DATE DESC
             SQL, [
                 'employee_id' => $employeeId,
                 'from_date' => $fromDate,

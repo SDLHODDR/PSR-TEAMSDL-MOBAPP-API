@@ -115,17 +115,19 @@ final class EmployeeAuthModel extends Model
                    e.COM_EMAIL
             FROM (
                 SELECT GEO_ID, GEO_DESC, GEO_LABEL, DIVSN_ID, EMP_ID, GEO_HCLS_ID, GEO_LVL
-                FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, TRUNC(ADD_MONTHS(SYSDATE, -24))))
+                FROM TABLE(GEOEMP.LIST_DOWN(:employee_id, NULL, TRUNC(SYSDATE)))
                 WHERE EMP_ID = :employee_id
             ) g
             INNER JOIN SFM_EMPLOYEE_INFO e ON g.EMP_ID = e.ID
             SQL, ['employee_id' => $employeeId]);
-            //REmove ADD_MONTHS(SYSDATE,24) and replace SYSDATE
+            // Resolve the division independently as the geography hierarchy can
+            // be unavailable for an employee while SFM_EMP_DIVISIONS is valid.
+        $divisionId = $hq['DIVSN_ID'] ?? ($divisions[0] ?? null);
         $division = null;
-        if ($hq !== null && !empty($hq['DIVSN_ID'])) {
+        if ($divisionId !== null && $divisionId !== '') {
             $division = $this->fetchOne(
                 'SELECT DIVSN_DESC FROM SFM_DIVISIONS WHERE DIVSN_ID = :division_id',
-                ['division_id' => $hq['DIVSN_ID']]
+                ['division_id' => $divisionId]
             );
         }
         // $financialYear = $this->fetchOne(<<<'SQL'

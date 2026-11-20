@@ -50,7 +50,10 @@ final class RouteController extends Controller
         } catch (InvalidArgumentException $exception) {
             return $this->failure($exception->getMessage(), 422, 'validation_failed');
         } catch (Throwable $exception) {
-            error_log('[SDL PSR API] Route customer lookup failed: ' . get_class($exception));
+            error_log(
+                '[SDL PSR API] Route customer lookup failed: ' .
+                get_class($exception) . ' - ' . $exception->getMessage()
+            );
             return $this->failure('Route customers are temporarily unavailable.', 503, 'route_customers_unavailable');
         }
         if ($data === null) {

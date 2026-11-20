@@ -22,7 +22,7 @@ final class ExpensesController extends Controller
 
         try {
             $expenses = (new ExpensesModel(Database::fromEnvironment()))
-                ->lastThreeCompletedMonths($employeeId);
+                ->currentAndLastThreeMonths($employeeId);
         } catch (Throwable $exception) {
             error_log('[SDL PSR API] Expenses lookup failed: ' . get_class($exception));
             return $this->failure(

@@ -61,35 +61,41 @@ final class RouteModel extends Model
         }
 
         $rows = $this->fetchAll(<<<'SQL'
-            SELECT d.CUST_ID AS CUSTOMER_ID,
-                   INITCAP(c.CUST_NAME) AS CUSTOMER_NAME,
-                   ct.CTYP_DESC AS CUSTOMER_TYPE,
-                   get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID) AS CUSTOMER_TYPE_ID,
-                   NVL(ch.CONSENT_FLAG, 'N') AS CONSENT_FLAG,
-                   TO_CHAR(ch.VERIFY_ON, 'DD-Mon-YY HH:MI AM') AS VERIFIED_ON,
-                   NVL(ch.PRI_CELL_NUM, c.CELL) AS PRIMARY_PHONE,
-                   (SELECT CASE WHEN COUNT(1) > 0 THEN 'Y' ELSE 'N' END
-                      FROM SFM_OUTBOX_OTP o
-                     WHERE o.CUST_ID = d.CUST_ID
-                       AND o.EMP_ID = :employee_id
-                       AND o.OTP_FLAG = 'Consent'
-                       AND o.STATUS = 'N') AS OTP_PENDING
-            FROM SFM_ROUTE_PLANS r
-            INNER JOIN SFM_ROUTE_PLANS_DET d ON d.ROUTE_ID = r.ID
-            INNER JOIN SFM_CUSTOMER_INFO c ON c.ID = d.CUST_ID
-            LEFT JOIN SFM_CUST_HQ ch
-                ON ch.CUST_ID = d.CUST_ID
-               AND ch.HQ_ID = r.HQ_ID
-               AND ch.DIVSN_ID = r.DIVSN_ID
-            LEFT JOIN SFM_CUST_TYPES ct
-                ON ct.CTYP_ID = get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID)
-            WHERE r.ROUTE_SEQ = :route_id
-              AND r.HQ_ID = :hq_id
-              AND r.DIVSN_ID = :division_id
-              AND r.STATUS = 'A'
-              AND d.STATUS = 'A'
-            ORDER BY get_custid_custtypesq(d.CUST_ID, r.HQ_ID, r.DIVSN_ID),
-                     INITCAP(c.CUST_NAME)
+            SELECT CUSTOMER_ID, CUSTOMER_NAME, CUSTOMER_TYPE, CUSTOMER_TYPE_ID,
+                   CONSENT_FLAG, VERIFIED_ON, PRIMARY_PHONE, OTP_PENDING
+            FROM (
+                SELECT d.CUST_ID AS CUSTOMER_ID,
+                       INITCAP(c.CUST_NAME) AS CUSTOMER_NAME,
+                       ct.CTYP_DESC AS CUSTOMER_TYPE,
+                       get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID) AS CUSTOMER_TYPE_ID,
+                       NVL(ch.CONSENT_FLAG, 'N') AS CONSENT_FLAG,
+                       TO_CHAR(ch.VERIFY_ON, 'DD-Mon-YY HH:MI AM') AS VERIFIED_ON,
+                       NVL(ch.PRI_CELL_NUM, c.CELL) AS PRIMARY_PHONE,
+                       CASE WHEN EXISTS (
+                           SELECT 1
+                           FROM SFM_OUTBOX_OTP o
+                           WHERE o.CUST_ID = d.CUST_ID
+                             AND o.EMP_ID = :employee_id
+                             AND o.OTP_FLAG = 'Consent'
+                             AND o.STATUS = 'N'
+                       ) THEN 'Y' ELSE 'N' END AS OTP_PENDING,
+                       get_custid_custtypesq(d.CUST_ID, r.HQ_ID, r.DIVSN_ID) AS TYPE_SEQUENCE
+                FROM SFM_ROUTE_PLANS r
+                INNER JOIN SFM_ROUTE_PLANS_DET d ON d.ROUTE_ID = r.ID
+                INNER JOIN SFM_CUSTOMER_INFO c ON c.ID = d.CUST_ID
+                LEFT JOIN SFM_CUST_HQ ch
+                    ON ch.CUST_ID = d.CUST_ID
+                   AND ch.HQ_ID = r.HQ_ID
+                   AND ch.DIVSN_ID = r.DIVSN_ID
+                LEFT JOIN SFM_CUST_TYPES ct
+                    ON ct.CTYP_ID = get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID)
+                WHERE r.ROUTE_SEQ = :route_id
+                  AND r.HQ_ID = :hq_id
+                  AND r.DIVSN_ID = :division_id
+                  AND r.STATUS = 'A'
+                  AND d.STATUS = 'A'
+            ) route_customers
+            ORDER BY TYPE_SEQUENCE, CUSTOMER_NAME
             SQL, [
                 'employee_id' => $employeeId,
                 'route_id' => $routeId,

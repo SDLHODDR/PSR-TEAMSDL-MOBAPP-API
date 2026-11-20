@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controllers\AuthController;
 use App\Controllers\DatabaseHealthController;
+use App\Controllers\DayPlanController;
 use App\Controllers\DashboardController;
 use App\Controllers\ExpensesController;
 use App\Controllers\ExampleController;
@@ -45,6 +46,17 @@ $router->get('/api/v1/price-list', [PriceListController::class, 'index'], $busin
 $router->get('/api/v1/non-field-activities/options', [NonFieldActivityController::class, 'options'], $businessMiddleware);
 $router->get('/api/v1/non-field-activities', [NonFieldActivityController::class, 'index'], $businessMiddleware);
 $router->post('/api/v1/non-field-activities', [NonFieldActivityController::class, 'save'], $businessMiddleware);
+$router->get('/api/v1/day-plans/{planId}/activities', [DayPlanController::class, 'customerActivity'], $businessMiddleware);
+$router->get('/api/v1/day-plans/options', [DayPlanController::class, 'options'], $businessMiddleware);
+$router->get('/api/v1/day-plans/{planId}/routes/{routeId}/customers', [DayPlanController::class, 'routeCustomers'], $businessMiddleware);
+$router->delete('/api/v1/day-plans/{planId}/customers/{customerId}', [DayPlanController::class, 'deleteListedCustomer'], $businessMiddleware);
+$router->get('/api/v1/day-plans', [DayPlanController::class, 'index'], $businessMiddleware);
+$router->post('/api/v1/day-plans/draft', [DayPlanController::class, 'saveDraft'], $businessMiddleware);
+$router->post('/api/v1/day-plans/open-requests', [DayPlanController::class, 'saveOpenRequest'], $businessMiddleware);
+$router->post('/api/v1/day-plans/visits', [DayPlanController::class, 'addListedCustomers'], $businessMiddleware);
+$router->post('/api/v1/day-plans/unlisted-customers', [DayPlanController::class, 'addUnlistedCustomer'], $businessMiddleware);
+$router->post('/api/v1/day-plans/activities', [DayPlanController::class, 'saveCustomerActivity'], $businessMiddleware);
+$router->post('/api/v1/day-plans/submit', [DayPlanController::class, 'submit'], $businessMiddleware);
 $router->get('/api/v1/routes', [RouteController::class, 'index'], $businessMiddleware);
 $router->get('/api/v1/routes/{routeId}/customers', [RouteController::class, 'customers'], $businessMiddleware);
 $router->get('/api/v1/routes/{routeId}/customers/{customerId}', [RouteController::class, 'customer'], $businessMiddleware);
