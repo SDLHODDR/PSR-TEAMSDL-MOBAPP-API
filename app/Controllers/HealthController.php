@@ -16,8 +16,6 @@ final class HealthController extends Controller
             'status' => 'ok',
             'service' => 'sdl-psr-api',
             'timestamp' => gmdate(DATE_ATOM),
-            'php_version' => PHP_VERSION,
-            'database' => 'not_checked_in_phase_1',
         ], 'API is healthy');
     }
 }

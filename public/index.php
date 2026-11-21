@@ -14,10 +14,28 @@ require BASE_PATH . '/vendor/autoload.php';
 
 Env::load(BASE_PATH . '/.env');
 
+$logPath = (string) (getenv('LOG_PATH') ?: BASE_PATH . '/storage/logs');
+if (!str_starts_with($logPath, DIRECTORY_SEPARATOR) && !preg_match('/^[A-Za-z]:[\\\\\/]/', $logPath)) {
+    $logPath = BASE_PATH . DIRECTORY_SEPARATOR . $logPath;
+}
+
 ErrorHandler::register(
-    BASE_PATH . '/storage/logs',
-    filter_var(getenv('APP_DEBUG') ?: 'true', FILTER_VALIDATE_BOOL)
+    $logPath,
+    filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL)
 );
+
+// This is an API-only origin. Keep browser-facing responses deliberately restrictive.
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header_remove('X-Powered-By');
+
+$appUrl = (string) getenv('APP_URL');
+if (str_starts_with(strtolower($appUrl), 'https://') || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
@@ -37,6 +55,7 @@ if (($isLocalEnvironment && $isLocalDevelopmentOrigin) || in_array($origin, $all
     header('Vary: Origin');
     header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+    header('Access-Control-Max-Age: 600');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

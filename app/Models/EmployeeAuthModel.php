@@ -58,12 +58,15 @@ final class EmployeeAuthModel extends Model
         $incorrectCount = $this->fetchOne(<<<'SQL'
             SELECT COUNT(1) AS CNT
             FROM (
-                SELECT EMP_CODE, ID, ISSUCCESS
-                FROM SFM_BCS_USER_LOGIN_LOG
-                WHERE EMP_CODE = :username
-                  AND TRUNC(SYSDATE) = TRUNC(ATTEMPT_ON)
-                ORDER BY ID DESC
-                FETCH FIRST 4 ROWS ONLY
+                SELECT ISSUCCESS
+                FROM (
+                    SELECT ISSUCCESS
+                    FROM SFM_BCS_USER_LOGIN_LOG
+                    WHERE EMP_CODE = :username
+                      AND TRUNC(SYSDATE) = TRUNC(ATTEMPT_ON)
+                    ORDER BY ID DESC
+                )
+                WHERE ROWNUM <= 4
             )
             WHERE ISSUCCESS = 'N'
             SQL, ['username' => $username]);

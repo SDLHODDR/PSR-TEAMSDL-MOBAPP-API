@@ -23,7 +23,9 @@ use SDL\Framework\RequestIdMiddleware;
 $router->middleware(new RequestIdMiddleware());
 
 $router->get('/api/v1/health', [HealthController::class, 'show']);
-$router->get('/api/v1/health/db', [DatabaseHealthController::class, 'show']);
+if (filter_var(getenv('APP_HEALTH_DB_ENABLED') ?: 'false', FILTER_VALIDATE_BOOL)) {
+    $router->get('/api/v1/health/db', [DatabaseHealthController::class, 'show']);
+}
 $router->post('/api/v1/auth/login', [AuthController::class, 'login']);
 $router->post('/api/v1/auth/logout', [AuthController::class, 'logout'], [new AuthenticationMiddleware()]);
 $router->get('/api/v1/auth/me', [AuthController::class, 'me'], [new AuthenticationMiddleware()]);

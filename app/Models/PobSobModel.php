@@ -30,22 +30,7 @@ final class PobSobModel extends Model
             throw new RuntimeException('No active division is configured for this employee.');
         }
 
-        $geo = $this->fetchOne(<<<'SQL'
-            SELECT GEO_ID
-            FROM (
-                SELECT g.GEO_ID
-                FROM TABLE(
-                    GEOEMP.LIST_DOWN(
-                        :employee_id, NULL, TRUNC(ADD_MONTHS(SYSDATE, -24))
-                    )
-                ) g
-                WHERE g.EMP_ID = :employee_id
-            )
-            WHERE ROWNUM = 1
-            SQL, ['employee_id' => $employeeId]);
-        if ($geo === null || empty($geo['GEO_ID'])) {
-            throw new RuntimeException('No active geography is configured for this employee.');
-        }
+        $geo = $this->employeeGeo($employeeId);
 
         $rows = $this->fetchAll(<<<'SQL'
             WITH source_orders AS (

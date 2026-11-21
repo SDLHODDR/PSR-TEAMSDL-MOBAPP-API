@@ -21,6 +21,15 @@ final class Request
 
     public static function fromGlobals(): self
     {
+        $contentLength = filter_var($_SERVER['CONTENT_LENGTH'] ?? null, FILTER_VALIDATE_INT);
+        $maxBodyBytes = filter_var(getenv('REQUEST_MAX_BODY_BYTES') ?: '1048576', FILTER_VALIDATE_INT);
+        if ($maxBodyBytes === false || $maxBodyBytes < 1024 || $maxBodyBytes > 52428800) {
+            $maxBodyBytes = 1048576;
+        }
+        if ($contentLength !== false && $contentLength > $maxBodyBytes) {
+            throw new HttpException(413, 'Request body is too large.', 'request_too_large');
+        }
+
         $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = parse_url($uri, PHP_URL_PATH);

@@ -32,7 +32,10 @@ final class PobSobController extends Controller
         } catch (InvalidArgumentException $exception) {
             return $this->failure($exception->getMessage(), 422, 'validation_failed');
         } catch (Throwable $exception) {
-            error_log('[SDL PSR API] POB/SOB lookup failed: ' . get_class($exception));
+            error_log(
+                '[SDL PSR API] POB/SOB lookup failed: ' .
+                get_class($exception) . ': ' . $exception->getMessage()
+            );
             return $this->failure('POB/SOB orders are temporarily unavailable.', 503, 'pob_sob_unavailable');
         }
 

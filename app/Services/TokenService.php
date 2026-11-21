@@ -88,7 +88,7 @@ final class TokenService
 
     private function privateKey(): mixed
     {
-        $contents = @file_get_contents($this->requiredConfig('JWT_PRIVATE_KEY_PATH'));
+        $contents = @file_get_contents($this->resolveConfiguredPath($this->requiredConfig('JWT_PRIVATE_KEY_PATH')));
         if (!is_string($contents) || $contents === '') throw new RuntimeException('JWT private key is unavailable.');
         $key = openssl_pkey_get_private($contents);
         if ($key === false) throw new RuntimeException('JWT private key is invalid.');
@@ -97,11 +97,21 @@ final class TokenService
 
     private function publicKey(): mixed
     {
-        $contents = @file_get_contents($this->requiredConfig('JWT_PUBLIC_KEY_PATH'));
+        $contents = @file_get_contents($this->resolveConfiguredPath($this->requiredConfig('JWT_PUBLIC_KEY_PATH')));
         if (!is_string($contents) || $contents === '') throw new RuntimeException('JWT public key is unavailable.');
         $key = openssl_pkey_get_public($contents);
         if ($key === false) throw new RuntimeException('JWT public key is invalid.');
         return $key;
+    }
+
+    private function resolveConfiguredPath(string $path): string
+    {
+        if ($path === '' || $path[0] === '/' || preg_match('/^[A-Za-z]:[\\\\\/]/', $path) === 1) {
+            return $path;
+        }
+
+        // Resolve relative paths from the project root, not the web-server CWD.
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . ltrim($path, '/\\');
     }
 
     private function requiredConfig(string $name): string

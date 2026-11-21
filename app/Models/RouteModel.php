@@ -88,7 +88,8 @@ final class RouteModel extends Model
                    AND ch.HQ_ID = r.HQ_ID
                    AND ch.DIVSN_ID = r.DIVSN_ID
                 LEFT JOIN SFM_CUST_TYPES ct
-                    ON ct.CTYP_ID = get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID)
+                    ON TO_CHAR(ct.CTYP_ID) =
+                       TRIM(get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID))
                 WHERE r.ROUTE_SEQ = :route_id
                   AND r.HQ_ID = :hq_id
                   AND r.DIVSN_ID = :division_id
@@ -109,9 +110,9 @@ final class RouteModel extends Model
                 'customer_id' => (int) $row['CUSTOMER_ID'],
                 'name' => (string) $row['CUSTOMER_NAME'],
                 'customer_type' => (string) ($row['CUSTOMER_TYPE'] ?? ''),
-                'customer_type_id' => $row['CUSTOMER_TYPE_ID'] === null
-                    ? null
-                    : (int) $row['CUSTOMER_TYPE_ID'],
+                'customer_type_id' => is_numeric($row['CUSTOMER_TYPE_ID'] ?? null)
+                    ? (int) $row['CUSTOMER_TYPE_ID']
+                    : null,
                 'verified' => $row['CONSENT_FLAG'] === 'Y',
                 'verified_on' => $row['VERIFIED_ON'],
                 'primary_phone' => $row['PRIMARY_PHONE'],
@@ -150,7 +151,8 @@ final class RouteModel extends Model
                AND ch.HQ_ID = r.HQ_ID
                AND ch.DIVSN_ID = r.DIVSN_ID
             LEFT JOIN SFM_CUST_TYPES ct
-                ON ct.CTYP_ID = get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID)
+                ON TO_CHAR(ct.CTYP_ID) =
+                   TRIM(get_custid_custtypeid(d.CUST_ID, r.HQ_ID, r.DIVSN_ID))
             WHERE r.ROUTE_SEQ = :route_id
               AND r.HQ_ID = :hq_id
               AND r.DIVSN_ID = :division_id
@@ -453,9 +455,9 @@ final class RouteModel extends Model
             'customer_id' => (int) $row['CUSTOMER_ID'],
             'name' => (string) $row['CUSTOMER_NAME'],
             'customer_type' => (string) ($row['CUSTOMER_TYPE'] ?? ''),
-            'customer_type_id' => $row['CUSTOMER_TYPE_ID'] === null
-                ? null
-                : (int) $row['CUSTOMER_TYPE_ID'],
+            'customer_type_id' => is_numeric($row['CUSTOMER_TYPE_ID'] ?? null)
+                ? (int) $row['CUSTOMER_TYPE_ID']
+                : null,
             'address' => (string) ($row['ADDRESS'] ?? ''),
             'state' => (string) ($row['STATE'] ?? ''),
             'city' => (string) ($row['CITY'] ?? ''),

@@ -19,7 +19,10 @@ final class Response
         return new self($json, $status, array_merge([
             'Content-Type' => 'application/json; charset=utf-8',
             'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'no-store'
+            'Cache-Control' => 'no-store',
+            'X-Frame-Options' => 'DENY',
+            'Referrer-Policy' => 'no-referrer',
+            'Content-Security-Policy' => "default-src 'none'; frame-ancestors 'none'",
         ], $headers));
     }
 
